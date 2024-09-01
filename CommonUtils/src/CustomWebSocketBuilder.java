@@ -25,4 +25,6 @@ public class CustomWebSocketBuilder implements WebSocket.Builder {
     public CompletableFuture<WebSocket> buildAsync(URI uri, WebSocket.Listener listener) {
         return null;
     }
+
+
 }

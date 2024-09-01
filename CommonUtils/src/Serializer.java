@@ -7,11 +7,14 @@ import java.lang.reflect.Type;
 public class Serializer {
     private static final Gson gson = new GsonBuilder().create();
 
-    public static String toJSON(Object obj) {
+    public static String toJSON(WeatherData obj) {
         return gson.toJson(obj);
     }
 
-    public static <T> T fromJSON(String json, Type clazz) {
-        return gson.fromJson(json, clazz);
+    public static WeatherData fromJSON(String json) {
+        return gson.fromJson(json, WeatherData.class);
     }
+
+
+
 }

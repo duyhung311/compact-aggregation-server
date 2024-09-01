@@ -8,7 +8,7 @@ import java.util.concurrent.CompletionStage;
 
 public class CustomWebSocketListener implements WebSocket.Listener {
     DataManipulator dataManipulator;
-    CustomWebSocketListener() {
+    public CustomWebSocketListener() {
         dataManipulator = new DataManipulator();
     }
 
