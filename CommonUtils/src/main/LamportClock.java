@@ -27,6 +27,9 @@ public class LamportClock {
      *
      * @return The current Lamport clock value.
      */
+    public synchronized int issueLamportClockValue() {
+        return currentTime++;
+    }
     public synchronized int getValue() {
         return currentTime;
     }

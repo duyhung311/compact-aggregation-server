@@ -26,7 +26,7 @@ public class GETClient {
 
             startHeartbeatThread(outputData, dis);
             // Send a GET request to the server
-            sendGetRequest(outputData, host, port);
+            sendGetRequest(outputData, dis);
 //            processServerResponse(inputReader);
             while (listening) {}
             // Process the server's response
@@ -35,11 +35,28 @@ public class GETClient {
         }
     }
 
-    private static void processServerResponse(BufferedReader inputReader) {
-    }
+    private static void sendGetRequest(DataOutputStream outputData, DataInputStream dis) throws IOException {
+        Thread getRequestThread = new Thread(() -> {
+            while (true) {
+                String request = """
+                        GET /weather.json HTTP/1.1
+                        User-Agent: ATOMClient/1/0
+                        Accept: application/json
+                        Lamport-Clock: %d
+                        """;
+                request = String.format(request, lamportClock.issueLamportClockValue());
+                try {
+                    outputData.writeUTF(request);
+                    outputData.flush();
+                    System.out.println(dis.readUTF());
+                    Thread.sleep(3000);
+                } catch (IOException | InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
 
-    private static void sendGetRequest(DataOutputStream outputData, String host, int port) {
-
+            }
+        });
+        getRequestThread.start();
     }
 
     private static void startHeartbeatThread(DataOutputStream outputData, DataInputStream dis) {
@@ -49,14 +66,12 @@ public class GETClient {
 
                 // Write the message to the output stream and flush it
                 try {
-
+                    System.out.println("Heartbeat sent");
                     outputData.writeUTF(heartbeatMessage);
                     outputData.flush();
-                    System.out.println("Heartbeat sent");
-                    String response = dis.readUTF();
-                    System.out.println("response: " + response);
+
                     // Sleep for 20 seconds before sending the next heartbeat
-                    Thread.sleep(10000);
+                    Thread.sleep(20000);
                 } catch (IOException | InterruptedException e) {
                     throw new RuntimeException(e);
                 }

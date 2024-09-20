@@ -15,26 +15,19 @@ public class DataManipulator {
         defaultFile = new File(defaultFileName);
     }
 
-    public void putFeed(Request req, String uuid, Long timestamp) {
+    public boolean putFeed(String req, String uuid, Long timestamp) {
 
-        String fileName = defaultDir + uuid + "_" + timestamp + ".txt";
-        StringBuilder content = new StringBuilder();
-        content.append("Method: ").append(req.method()).append("\n");
-        content.append("Content-Length: ").append(req.contentLength()).append("\n");
-        content.append("User-Agent: ").append(req.userAgent()).append("\n");
-        content.append("Accept: ").append(req.accept()).append("\n");
-        content.append("Lamport-Value: ").append(req.lamportClockValue()).append("\n");
-        content.append(req.data());
+        String fileName = defaultDir + "/"  + uuid + "/" + timestamp + ".txt";
+        boolean newDir = new File(defaultDir + "/"  + uuid + "/").mkdirs();
         File directory = new File(fileName);
         try {
             FileWriter fileWriter = new FileWriter(directory);
-            fileWriter.write(content.toString());
+            fileWriter.write(req);
             fileWriter.close();
         } catch (IOException e) {
             System.err.println("Error storing data: " + e.getMessage());
         }
-
-
+        return newDir;
     }
 
 

@@ -10,6 +10,11 @@ public class AggregationServer {
 
     }
 
+    /**
+     * Start a aggregation to start listening to new connection (default port is {@code 4567})
+     * Create a data directory to store data if not exist
+     * @param args
+     */
     public static void main(String[] args) {
 
         int portNumber = 4567;

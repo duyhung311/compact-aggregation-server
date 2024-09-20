@@ -49,6 +49,20 @@ public class AggregationServerMultiThread extends Thread {
         dataCleanupThread.start();
     }
 
+    private void workerThreadToManageConnections() {
+        Thread manageConnectionsThread = new Thread(() -> {
+            while (true) {
+                manageConnections();
+                try {
+                    Thread.sleep(1_000);
+                } catch (InterruptedException e) {
+                    System.out.println(e.getMessage());
+                }
+            }
+        });
+        manageConnectionsThread.start();
+    }
+
     private void workerThreadRecevingData() {
         Thread recevingThread = new Thread(this::handlingIncomingData);
         recevingThread.start();
@@ -61,50 +75,52 @@ public class AggregationServerMultiThread extends Thread {
             DataInputStream dis = new DataInputStream(socket.getInputStream());
             DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
         ) {
+
             while (listening) {
                 String str = dis.readUTF();
                 if (str.equals("Bup Bup")) {
                     System.out.println("Received heartbeat message.");
-                String response = "Heartbeat acknowledged.";
-                dos.writeUTF(response);
-                dos.flush();
                 } else {
-                    Request dataReceived;
-                    try {
-                        dataReceived = Serializer.parseRequest(str);
-                    } catch (JsonSyntaxException e) {
-                        String internalServerErrorResponse = """
-                                    HTTP/1.1 500 Internal server error
-                                    User-Agent: ATOMClient/1/0
-                                    Content-Length: 0
-                               """;
-                        dos.writeUTF(internalServerErrorResponse);
-                        dos.flush();
-                        return;
-                    }
-                    boolean isLamportPresent = checkLamportClock(dataReceived);
+
+                    boolean isLamportPresent = checkLamportClock(str);
                     if (isLamportPresent) {
-                        if (dataReceived.method().equals("PUT")) {
-                            recentWeatherData = Serializer.fromJSONToSingleEntity(dataReceived.data());
+                        if (str.contains("PUT")) {
+                            String putBody = str.substring(str.indexOf("{"));
+                            recentWeatherData = Serializer.fromJSONToSingleEntity(putBody);
                             Long timeStamp = System.currentTimeMillis();
                             serverLastActiveTime.put(this.socket, timeStamp);
 
                             // put data
-                            dataManipulator.putFeed(dataReceived, serverIds.get(this.socket), timeStamp);
-
+                            boolean newDir = dataManipulator.putFeed(str, serverIds.get(this.socket), timeStamp);
+                            String responseToSuccessPut;
+                            if (newDir) {
+                                 responseToSuccessPut = """
+                                 HTTP/1.1 201 CREATED
+                                 Content-Type: application/json
+                                 Content-Length: 0;
+                                 """;
+                            } else {
+                                responseToSuccessPut = """
+                                HTTP/1.1 200 OK
+                                 Content-Type: application/json
+                                 Content-Length: 0;
+                                """;
+                            }
+                            dos.writeUTF(responseToSuccessPut);
+                            dos.flush();
                             // then remove outdated data from where?
-                        } else if (dataReceived.method().equals("GET")) { // GET request
+
+                        } else if (str.contains("GET")) { // GET request
                             // return recent data
                             if (Objects.isNull(recentWeatherData)) {
                                 String emptyResponse = """
                                     HTTP/1.1 404 Not Found
                                     User-Agent: ATOMClient/1/0
-                                    Content-Type: %s
+                                    Content-Type: application/json
                                     Content-Length: %d
 
                                     No weather data available.""";
                                 emptyResponse = String.format(emptyResponse,
-                                        "application/json",
                                         "No weather data available.".length());
                                 dos.writeUTF(emptyResponse);
                                 dos.flush();
@@ -142,8 +158,24 @@ public class AggregationServerMultiThread extends Thread {
         }
     }
 
-    private boolean checkLamportClock(Request req) {
-        return req.lamportClockValue() != null;
+    private boolean checkLamportClock(String req) {
+        int index = req.indexOf("Lamport-Clock");
+
+        if ( index > 0) {
+            String cutRequest = req.substring(index);
+            return retrieveLamportValue(cutRequest, req.contains("PUT")) >= 0;
+
+        }
+        return false;
+    }
+
+    private int retrieveLamportValue(String cutRequest, boolean isPut) {
+        int indexOfColon = cutRequest.indexOf(":");
+        if ( indexOfColon > 0) {
+            String fromColon  = cutRequest.substring(indexOfColon + 1, cutRequest.indexOf("\n"));
+            return Integer.parseInt(fromColon.trim());
+        }
+        return -1;
     }
 
     private void cleanupStaleData() {
@@ -179,19 +211,7 @@ public class AggregationServerMultiThread extends Thread {
         }
     }
 
-    private void workerThreadToManageConnections() {
-        Thread manageConnectionsThread = new Thread(() -> {
-            while (true) {
-                manageConnections();
-                try {
-                    Thread.sleep(1_000);
-                } catch (InterruptedException e) {
-                    System.out.println(e.getMessage());
-                }
-            }
-        });
-        manageConnectionsThread.start();
-    }
+
 
     public void manageConnections() {
         long currentTime = System.currentTimeMillis();
@@ -232,8 +252,8 @@ public class AggregationServerMultiThread extends Thread {
         if (files != null) {
             for (File file : files) {
                 // Check if the file's name contains the serverId
-                if (file.getName().contains(serverId)) {
-                    if (file.delete()) {
+                if (!file.isDirectory() && file.getName().contains(serverId)) {
+                    if ( file.delete()) {
                         System.out.println("Deleted client-specific data file: " + file.getName());
                     } else {
                         System.err.println("Failed to delete client-specific data file: " + file.getName());
