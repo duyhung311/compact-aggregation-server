@@ -1,4 +1,7 @@
-package src;
+package src.main;
+
+import java.util.Collections;
+import java.util.List;
 
 public class Request {
     private String method;
@@ -7,6 +10,7 @@ public class Request {
     private String data;
     private String userAgent;
     private String accept;
+    private Integer lamportClockValue;
 
     public String method() {
         return method;
@@ -62,9 +66,18 @@ public class Request {
         return this;
     }
 
-    public Request buildPutRequestWithData(WeatherData data) {
+    public Integer lamportClockValue() {
+        return lamportClockValue;
+    }
+
+    public Request setLamportClockValue(int lamportClockValue) {
+        this.lamportClockValue = lamportClockValue;
+        return this;
+    }
+
+    public static Request buildPutRequestWithData(WeatherData data) {
         return new Request()
-                .setData(data.toString())
+                .setData(Serializer.toJSON(data))
                 .setMethod("PUT")
                 .setContentLength(data.toString().length())
                 .setContentType("application/json")
@@ -72,7 +85,7 @@ public class Request {
                 .setUserAgent("ATOMClient/1/0");
     }
 
-    public Request buildGetRequestWithData(WeatherData data) {
+    public static Request buildGetRequestWithData(WeatherData data) {
         return new Request()
                 .setMethod("GET")
                 .setContentLength(data.toString().length())

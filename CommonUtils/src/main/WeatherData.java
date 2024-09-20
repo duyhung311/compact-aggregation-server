@@ -1,5 +1,7 @@
-package src;
+package src.main;
 
+
+import java.time.Instant;
 
 public class WeatherData {
     String id;
@@ -19,6 +21,7 @@ public class WeatherData {
     String windDir;
     float windSpdKmh;
     float windSpdKt;
+    long expiredTime;
 
     public String id() {
         return id;
@@ -170,6 +173,17 @@ public class WeatherData {
 
     public WeatherData setWindSpdKt(float windSpdKt) {
         this.windSpdKt = windSpdKt;
+        return this;
+    }
+
+    public long expiredTime() {
+        return expiredTime;
+    }
+
+    public WeatherData setExpiredTime(long expiredTime) {
+        this.expiredTime = expiredTime;
+        long epochInMillisecond = Instant.now().plusSeconds(30).toEpochMilli();
+
         return this;
     }
 }
