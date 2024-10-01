@@ -1,4 +1,3 @@
-package src.main;
 
 public class LamportClock {
 
@@ -7,7 +6,7 @@ public class LamportClock {
     // Two mode of maintain event order
     // mode 1: local time
     /**
-     * Increments the Lamport clock value by 1.
+     * Increase the Lamport clock value by 1.
      */
     synchronized int localEvent() {
         return  currentTime++;
@@ -20,21 +19,16 @@ public class LamportClock {
      * @param receiveTime The received Lamport clock value.
      */
     synchronized int receiveEvent(int receiveTime) {
-        return Math.max(currentTime, receiveTime) + 1;
+        currentTime = Math.max(currentTime, receiveTime) + 1;
+        return currentTime;
     }
     /**
-     * Retrieves the current Lamport clock value.
+     * Retrieves the current Lamport clock value and increase by 1 for future usage
      *
      * @return The current Lamport clock value.
      */
     public synchronized int issueLamportClockValue() {
         return currentTime++;
     }
-    public synchronized int getValue() {
-        return currentTime;
-    }
 
-    public synchronized void appendLamportClockToRequest(Request request) {
-        request.setLamportClockValue(localEvent());
-    }
 }

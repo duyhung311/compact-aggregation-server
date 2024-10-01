@@ -1,6 +1,5 @@
-package src.main;
 
-import com.google.gson.JsonSyntaxException;
+
 
 import java.io.*;
 import java.net.Socket;
@@ -13,8 +12,8 @@ public class AggregationServerMultiThread extends Thread {
     private static final int TTL_IN_MILLISECOND = 30000;
     private static final Map<Socket, String> serverIds = new ConcurrentHashMap<>();
     private static final Map<Socket, Long> serverLastActiveTime = new ConcurrentHashMap<>();
-    private static WeatherData recentWeatherData = null;
-    private static final Map<String, String> dataMap = new ConcurrentHashMap<>();
+    private static String recentWeatherData = null;
+    private static final LamportClock serverLamportClock = new LamportClock();
     public AggregationServerMultiThread(Socket socket, String uuid) {
         super("AggregationServerMultiThread");
         System.out.println("A client started");
@@ -23,6 +22,9 @@ public class AggregationServerMultiThread extends Thread {
         serverIds.put(socket, uuid);
     }
 
+    /**
+     * A thread main run() function that comprises forking 3 new other threads
+     */
     @Override
     public void run() {
         System.out.println("AggregationServerMultiThread started");
@@ -35,6 +37,10 @@ public class AggregationServerMultiThread extends Thread {
         workerThreadRecevingData();
     }
 
+    /**
+     * Create a thread to clean data that has no interaction
+     * TODO: still follow the old approach, need to upgrade
+     */
     private void workerThreadCleanDataPeriodically() {
         Thread dataCleanupThread = new Thread(() -> {
             while (true) {
@@ -49,6 +55,9 @@ public class AggregationServerMultiThread extends Thread {
         dataCleanupThread.start();
     }
 
+    /**
+     * Create a thread to manage connect that has no interaction within 30 seconds
+     */
     private void workerThreadToManageConnections() {
         Thread manageConnectionsThread = new Thread(() -> {
             while (true) {
@@ -63,6 +72,9 @@ public class AggregationServerMultiThread extends Thread {
         manageConnectionsThread.start();
     }
 
+    /**
+     * Create a thread to handle incoming request of Content Server and GET Client
+     */
     private void workerThreadRecevingData() {
         Thread recevingThread = new Thread(this::handlingIncomingData);
         recevingThread.start();
@@ -75,18 +87,24 @@ public class AggregationServerMultiThread extends Thread {
             DataInputStream dis = new DataInputStream(socket.getInputStream());
             DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
         ) {
-
+        synchronized (serverLamportClock) {
             while (listening) {
                 String str = dis.readUTF();
+
                 if (str.equals("Bup Bup")) {
+                    // Receiving default message
                     System.out.println("Received heartbeat message.");
                 } else {
-
-                    boolean isLamportPresent = checkLamportClock(str);
-                    if (isLamportPresent) {
+                    // If fall in here, it could either a PUT or a GET request
+                    int lamportClock = checkAndGetLamportClock(str);
+                    //But first, let's check if the lamport clock present
+                    if (lamportClock >= 0) {
+                        serverLamportClock.receiveEvent(lamportClock);
+                        // TODO: need to use serverLamportClock to update request.
+                        //  May be send with checkAndGetLamportClock() to modify request's lamport clock value
                         if (str.contains("PUT")) {
                             String putBody = str.substring(str.indexOf("{"));
-                            recentWeatherData = Serializer.fromJSONToSingleEntity(putBody);
+                            recentWeatherData = putBody;
                             Long timeStamp = System.currentTimeMillis();
                             serverLastActiveTime.put(this.socket, timeStamp);
 
@@ -94,7 +112,7 @@ public class AggregationServerMultiThread extends Thread {
                             boolean newDir = dataManipulator.putFeed(str, serverIds.get(this.socket), timeStamp);
                             String responseToSuccessPut;
                             if (newDir) {
-                                 responseToSuccessPut = """
+                                responseToSuccessPut = """
                                  HTTP/1.1 201 CREATED
                                  Content-Type: application/json
                                  Content-Length: 0;
@@ -134,7 +152,7 @@ public class AggregationServerMultiThread extends Thread {
                                     
                                     %s""\"
                                     """;
-                                String jsonData = Serializer.toJSON(recentWeatherData);
+                                String jsonData = recentWeatherData;
                                 dataResponse = String.format(dataResponse,jsonData.length(), jsonData);
                                 dos.writeUTF(dataResponse);
                                 dos.flush();
@@ -151,6 +169,8 @@ public class AggregationServerMultiThread extends Thread {
                     }
                 }
             }
+        }
+
 
 
         } catch (IOException e) {
@@ -158,26 +178,38 @@ public class AggregationServerMultiThread extends Thread {
         }
     }
 
-    private boolean checkLamportClock(String req) {
+    /**
+     * check if {@code Lamport-Value} present in the request then check if the value >= 0
+     * @param req A full request sent by a client
+     * @return the lamport clock value that presents in the request
+     */
+    private int checkAndGetLamportClock(String req) {
         int index = req.indexOf("Lamport-Clock");
 
         if ( index > 0) {
             String cutRequest = req.substring(index);
-            return retrieveLamportValue(cutRequest, req.contains("PUT")) >= 0;
-
+            return retrieveLamportValue(cutRequest);
         }
-        return false;
+        return -1;
     }
 
-    private int retrieveLamportValue(String cutRequest, boolean isPut) {
+    /**
+     * Get lamport value in the form of key-value pair
+     * @param cutRequest From {@code Lamport-Clock:} to the end to the request
+     * @return the lamport clock value
+     */
+    private int retrieveLamportValue(String cutRequest) {
         int indexOfColon = cutRequest.indexOf(":");
         if ( indexOfColon > 0) {
-            String fromColon  = cutRequest.substring(indexOfColon + 1, cutRequest.indexOf("\n"));
+            String fromColon = cutRequest.substring(indexOfColon + 1, cutRequest.indexOf("\n"));
             return Integer.parseInt(fromColon.trim());
         }
         return -1;
     }
 
+    /**
+     * Clean up data from data directory
+     */
     private void cleanupStaleData() {
         try {
             //System.out.println("cleaning data...");
@@ -211,8 +243,9 @@ public class AggregationServerMultiThread extends Thread {
         }
     }
 
-
-
+    /**
+     * CLose connection that has no interaction within 30 seconds
+     */
     public void manageConnections() {
         long currentTime = System.currentTimeMillis();
         List<Socket> socketsToClose = new ArrayList<>();
@@ -227,7 +260,10 @@ public class AggregationServerMultiThread extends Thread {
 
         // Close idle connections and perform cleanup
         for (Socket socketToClose : socketsToClose) {
-            try {
+            try (DataOutputStream dos = new DataOutputStream(socketToClose.getOutputStream());
+                    ) {
+                dos.writeUTF("Close connection");
+                dos.flush();
                 String serverId = serverIds.get(socketToClose);
 
                 System.out.println("Closing idle connection with client: " + socketToClose.getRemoteSocketAddress());
@@ -253,27 +289,14 @@ public class AggregationServerMultiThread extends Thread {
             for (File file : files) {
                 // Check if the file's name contains the serverId
                 if (!file.isDirectory() && file.getName().contains(serverId)) {
-                    if ( file.delete()) {
-                        System.out.println("Deleted client-specific data file: " + file.getName());
+                    if (file.delete()) {
+                        System.out.println("Deleted data file: " + file.getName());
                     } else {
-                        System.err.println("Failed to delete client-specific data file: " + file.getName());
+                        System.err.println("Failed to delete data file: " + file.getName());
                     }
                 }
             }
         }
     }
 
-    public void getFeed() {
-        // access file (lock access to file as well) TODO: (after this line, unlock)?  no
-        // once get the data, transform into list weather data and filter data within recent 20 seconds
-        // access file to write back filter (may handle corruption and server collapse) data while returning to GET client
-
-
-    }
-
-    public void putFeed() {
-        // access file (lock all access to file as well)
-        // start appending new data to data
-        
-    }
 }

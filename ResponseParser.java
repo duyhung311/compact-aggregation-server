@@ -1,4 +1,4 @@
-package src.main;
+
 
 public class ResponseParser {
     private static final String INTERNAL_SERVER_ERROR = "Internal Server Error";

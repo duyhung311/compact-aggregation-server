@@ -1,8 +1,5 @@
-package src.main;
-
 import java.io.*;
 import java.net.Socket;
-import java.util.Objects;
 
 public class GETClient {
     private static final LamportClock lamportClock = new LamportClock();

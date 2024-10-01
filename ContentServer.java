@@ -1,5 +1,3 @@
-package src.main;
-
 import java.io.*;
 import java.net.Socket;
 import java.net.UnknownHostException;
@@ -15,9 +13,9 @@ public class ContentServer {
 
 
     /**
-     * Start up a new Content server to connect to Aggregation Server
-     * Create a thread to feed data to Aggregation Server
-     * Keep this content Server on all the time to feed data continuously with a while loop
+     * Start up a new Content server to connect to Aggregation Server <br>
+     * Create a thread to feed data to Aggregation Server<br>
+     * Keep this content Server on all the time to feed data continuously with a while loop<br>
      * @param args
      */
     public static void main(String[] args) {
@@ -34,32 +32,7 @@ public class ContentServer {
             DataOutputStream dout = new DataOutputStream(kkSocket.getOutputStream());
             DataInputStream din = new DataInputStream(kkSocket.getInputStream())
         ) {
-            workerThreadToStartFeedingData(dout, din);
-            while (true) {}
-
-        } catch (UnknownHostException e) {
-            System.err.println("Don't know about host " + "localhost");
-            System.exit(1);
-        } catch (IOException e) {
-            System.err.println("Couldn't get I/O for the connection to " +
-                    "localhost");
-            System.exit(1);
-        }
-    }
-
-    /**
-     * <ul>
-     * <li>Start an individual thread to send data via PUT request to Aggregation Server</li>
-     * <li>Data to be sent contains in {@code weather_data.txt} </li>
-     * <li>The thread is designed to parse whole data at once and send them every 3 seconds </li>
-     * <li>After sending, the thread also receive response from Aggregation Server</li>
-     *</ul>
-     * @param dout {@code DataOutputStream} to send request to Aggregation Server
-     * @param din {@code DataInputStream} to receive response from Aggregation Server
-     */
-    public static void workerThreadToStartFeedingData(DataOutputStream dout , DataInputStream din) {
-        Thread feedData = new Thread(() -> {
-            // for each data in data file, after sending wait for reply and sleep for 2 seconds
+//            workerThreadToStartFeedingData(dout, din);
             List<String> dataToBeFeeded = convertDataToJson(dataFileLocation);
             for (String data : dataToBeFeeded) {
                 String request = """
@@ -87,6 +60,31 @@ public class ContentServer {
                 }
 
             }
+            while (true) {}
+        } catch (UnknownHostException e) {
+            System.err.println("Don't know about host " + "localhost");
+            System.exit(1);
+        } catch (IOException e) {
+            System.err.println("Couldn't get I/O for the connection to " +
+                    "localhost");
+            System.exit(1);
+        }
+    }
+
+    /**
+     * <ul>
+     * <li>Start an individual thread to send data via PUT request to Aggregation Server</li>
+     * <li>Data to be sent contains in {@code weather_data.txt} </li>
+     * <li>The thread is designed to parse whole data at once and send them every 3 seconds </li>
+     * <li>After sending, the thread also receive response from Aggregation Server</li>
+     *</ul>
+     * @param dout {@code DataOutputStream} to send request to Aggregation Server
+     * @param din {@code DataInputStream} to receive response from Aggregation Server
+     */
+    public static void workerThreadToStartFeedingData(DataOutputStream dout , DataInputStream din) {
+        Thread feedData = new Thread(() -> {
+            // for each data in data file, after sending wait for reply and sleep for 2 seconds
+
 
         });
         feedData.start();
