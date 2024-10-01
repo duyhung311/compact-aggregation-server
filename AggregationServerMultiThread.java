@@ -85,12 +85,11 @@ public class AggregationServerMultiThread extends Thread {
 
         try (
             DataInputStream dis = new DataInputStream(socket.getInputStream());
-            DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
+            DataOutputStream dos = new DataOutputStream(socket.getOutputStream())
         ) {
         synchronized (serverLamportClock) {
             while (listening) {
                 String str = dis.readUTF();
-
                 if (str.equals("Bup Bup")) {
                     // Receiving default message
                     System.out.println("Received heartbeat message.");

@@ -21,7 +21,7 @@ public class GETClient {
              DataOutputStream outputData = new DataOutputStream(socket.getOutputStream());
              BufferedReader inputReader = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
 
-            startHeartbeatThread(outputData, dis);
+            startHeartbeatThread(outputData);
             // Send a GET request to the server
             sendGetRequest(outputData, dis);
 //            processServerResponse(inputReader);
@@ -32,7 +32,7 @@ public class GETClient {
         }
     }
 
-    private static void sendGetRequest(DataOutputStream outputData, DataInputStream dis) throws IOException {
+    static void sendGetRequest(DataOutputStream outputData, DataInputStream dis) throws IOException {
         Thread getRequestThread = new Thread(() -> {
             while (true) {
                 String request = """
@@ -56,7 +56,7 @@ public class GETClient {
         getRequestThread.start();
     }
 
-    private static void startHeartbeatThread(DataOutputStream outputData, DataInputStream dis) {
+    static void startHeartbeatThread(DataOutputStream outputData) {
         Thread heartbeatThread = new Thread(() -> {
             while (true) {
                 String heartbeatMessage = "Bup Bup";
