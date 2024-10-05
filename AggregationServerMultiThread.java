@@ -1,23 +1,29 @@
-
-
-
 import java.io.*;
 import java.net.Socket;
+import java.net.SocketException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class AggregationServerMultiThread extends Thread {
-    private Socket socket = null;
+    private final Socket socket;
     private final DataManipulator dataManipulator;
     private static final int TTL_IN_MILLISECOND = 30000;
+
     private static final Map<Socket, String> serverIds = new ConcurrentHashMap<>();
+
     private static final Map<Socket, Long> serverLastActiveTime = new ConcurrentHashMap<>();
     private static String recentWeatherData = null;
     private static final LamportClock serverLamportClock = new LamportClock();
-    public AggregationServerMultiThread(Socket socket, String uuid) {
+
+
+    public AggregationServerMultiThread(Socket socket, String uuid) throws SocketException {
         super("AggregationServerMultiThread");
         System.out.println("A client started");
         this.socket = socket;
+        this.socket.setKeepAlive(true);
+
+        System.out.println(socket.getLocalAddress());
+        System.out.println(socket.getLocalPort());
         this.dataManipulator = new DataManipulator();
         serverIds.put(socket, uuid);
     }
@@ -27,19 +33,35 @@ public class AggregationServerMultiThread extends Thread {
      */
     @Override
     public void run() {
-        System.out.println("AggregationServerMultiThread started");
-        //check data from corruption before start up
+
+        try (
+            DataInputStream dis = new DataInputStream(socket.getInputStream());
+            DataOutputStream dos = new DataOutputStream(socket.getOutputStream())
+        ) {
+            workerThreadCleanDataPeriodically();
+            //worker thread to manage no interaction connection
+            workerThreadToManageConnections();
+            //worker thread to receive data
+            workerThreadRecevingData(dos, dis);
+            while (true) {
+                if (!isSocketConnected(socket)) {
+                    System.out.println("Socket connection lost. Attempting to reconnect...");
+                    throw new IOException("Socket disconnected");
+                }
+                // Simulate doing work or sending/receiving data
+                Thread.sleep(3000); // Example: simulate a keep-alive message or heartbeat
+            }
+        } catch (IOException e) {
+            System.out.println(e.getMessage());
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
         //worker thread to clean data periodically
-        workerThreadCleanDataPeriodically();
-        //worker thread to manage no interaction connection
-        workerThreadToManageConnections();
-        //worker thread to receive data
-        workerThreadRecevingData();
+
     }
 
     /**
      * Create a thread to clean data that has no interaction
-     * TODO: still follow the old approach, need to upgrade
      */
     private void workerThreadCleanDataPeriodically() {
         Thread dataCleanupThread = new Thread(() -> {
@@ -72,134 +94,175 @@ public class AggregationServerMultiThread extends Thread {
         manageConnectionsThread.start();
     }
 
+
+    private static boolean isSocketConnected(Socket socket) {
+        // Implement logic to check if the socket is still connected
+        // For example, check if the socket is closed or if input/output streams are still valid
+        return !socket.isClosed() && socket.isConnected();
+    }
+
     /**
      * Create a thread to handle incoming request of Content Server and GET Client
      */
-    private void workerThreadRecevingData() {
-        Thread recevingThread = new Thread(this::handlingIncomingData);
-        recevingThread.start();
-    }
-
-    private void handlingIncomingData() {
-        boolean listening = true;
-
-        try (
-            DataInputStream dis = new DataInputStream(socket.getInputStream());
-            DataOutputStream dos = new DataOutputStream(socket.getOutputStream())
-        ) {
-        synchronized (serverLamportClock) {
-            while (listening) {
-                String str = dis.readUTF();
-                if (str.equals("Bup Bup")) {
-                    // Receiving default message
-                    System.out.println("Received heartbeat message.");
-                } else {
-                    // If fall in here, it could either a PUT or a GET request
-                    int lamportClock = checkAndGetLamportClock(str);
-                    //But first, let's check if the lamport clock present
-                    if (lamportClock >= 0) {
-                        serverLamportClock.receiveEvent(lamportClock);
-                        // TODO: need to use serverLamportClock to update request.
-                        //  May be send with checkAndGetLamportClock() to modify request's lamport clock value
-                        if (str.contains("PUT")) {
-                            String putBody = str.substring(str.indexOf("{"));
-                            recentWeatherData = putBody;
-                            Long timeStamp = System.currentTimeMillis();
-                            serverLastActiveTime.put(this.socket, timeStamp);
-
-                            // put data
-                            boolean newDir = dataManipulator.putFeed(str, serverIds.get(this.socket), timeStamp);
-                            String responseToSuccessPut;
-                            if (newDir) {
-                                responseToSuccessPut = """
-                                 HTTP/1.1 201 CREATED
-                                 Content-Type: application/json
-                                 Content-Length: 0;
-                                 """;
-                            } else {
-                                responseToSuccessPut = """
-                                HTTP/1.1 200 OK
-                                 Content-Type: application/json
-                                 Content-Length: 0;
-                                """;
-                            }
-                            dos.writeUTF(responseToSuccessPut);
-                            dos.flush();
-                            // then remove outdated data from where?
-
-                        } else if (str.contains("GET")) { // GET request
-                            // return recent data
-                            if (Objects.isNull(recentWeatherData)) {
-                                String emptyResponse = """
-                                    HTTP/1.1 404 Not Found
-                                    User-Agent: ATOMClient/1/0
-                                    Content-Type: application/json
-                                    Content-Length: %d
-
-                                    No weather data available.""";
-                                emptyResponse = String.format(emptyResponse,
-                                        "No weather data available.".length());
-                                dos.writeUTF(emptyResponse);
-                                dos.flush();
-                            } else {
-
-                                String dataResponse = """
-                                    HTTP/1.1 200 OK
-                                    User-Agent: ATOMClient/1/0
-                                    Content-Type: application/json
-                                    Content-Length: %d
-                                    
-                                    %s""\"
-                                    """;
-                                String jsonData = recentWeatherData;
-                                dataResponse = String.format(dataResponse,jsonData.length(), jsonData);
-                                dos.writeUTF(dataResponse);
-                                dos.flush();
-                            }
+    public synchronized void workerThreadRecevingData(DataOutputStream dos, DataInputStream dis) {
+        Thread recevingThread = new Thread(() -> {
+            boolean listening = true;
+            try {
+                synchronized (dis) {
+                    while (listening) {
+                        String str = dis.readUTF();
+                        System.out.println(str);
+                        if (str.equals("Bup Bup")) {
+                            // Receiving default message
+                            System.out.println("Received heartbeat message.");
+                        } else if (isRequestHeadersValid(str)) {
+                            handleValidRequest(str, dis, dos);
                         } else {
                             String badRequestResponse = """
-                                    HTTP/1.1 400 Bad Request
-                                    User-Agent: ATOMClient/1/0
-                                    Content-Length: 0
-                               """;
+                                         HTTP/1.1 500 Internal Server Error
+                                         User-Agent: ATOMClient/1/0
+                                         Content-Length: 0
+                                    """;
                             dos.writeUTF(badRequestResponse);
                             dos.flush();
                         }
                     }
                 }
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-        }
+        });
+        recevingThread.start();
+    }
 
+    public synchronized void handleValidRequest(String str, DataInputStream dis, DataOutputStream dos) throws IOException {
 
-
-        } catch (IOException e) {
-            e.printStackTrace();
+        // If fall in here, it could either a PUT or a GET request
+        int lamportClock = checkAndGetLamportClock(str);
+        //But first, let's check if the lamport clock present
+        if (lamportClock >= 0) {
+            serverLamportClock.receiveEvent(lamportClock);
+            Long timeStamp = System.currentTimeMillis();
+            serverLastActiveTime.put(this.socket, timeStamp);
+            // TODO: need to use serverLamportClock to update request.
+            //  May be send with checkAndGetLamportClock() to modify request's lamport clock value
+            if (str.contains("PUT")) {
+                handleValidPUTRequest(str, dos, dis, timeStamp);
+            } else if (str.contains("GET")) { // GET request
+                handleValidGetRequest(dos);
+            } else {
+                String badRequestResponse = """
+                                                 HTTP/1.1 400 Bad Request
+                                                 User-Agent: ATOMClient/1/0
+                                                 Content-Length: 0
+                                            """;
+                dos.writeUTF(badRequestResponse);
+                dos.flush();
+            }
+        } else {
+            String badRequestResponse = """
+                                             HTTP/1.1 400 Bad Request
+                                             User-Agent: ATOMClient/1/0
+                                             Content-Length: 0
+                                        """;
+            dos.writeUTF(badRequestResponse);
+            dos.flush();
         }
     }
 
+    public synchronized void handleValidPUTRequest(String str, DataOutputStream dos, DataInputStream dis, Long timeStamp) throws IOException {
+        String putBody = str.substring(str.indexOf("{"));
+        recentWeatherData = putBody;
+
+        // put data
+        boolean newDir = dataManipulator.putFeed(str, serverIds.get(this.socket), timeStamp);
+        String responseToSuccessPut;
+        if (newDir) {
+            responseToSuccessPut = """
+                HTTP/1.1 201 CREATED
+                Content-Type: application/json
+                Content-Length: 0;
+                """;
+        } else {
+            responseToSuccessPut = """
+                HTTP/1.1 200 OK
+                 Content-Type: application/json
+                 Content-Length: 0;
+                """;
+        }
+        dos.writeUTF(responseToSuccessPut);
+        dos.flush();
+    }
+
+    public synchronized void handleValidGetRequest(DataOutputStream dos) throws IOException {
+        if (Objects.isNull(recentWeatherData)) {
+            String emptyResponse = """
+                                                HTTP/1.1 404 Not Found
+                                                User-Agent: ATOMClient/1/0
+                                                Content-Type: application/json
+                                                Content-Length: %d
+                                                    
+                                                No weather data available.""";
+            emptyResponse = String.format(emptyResponse,
+                    "No weather data available.".length());
+            dos.writeUTF(emptyResponse);
+            dos.flush();
+        } else {
+
+            String dataResponse = """
+                    HTTP/1.1 200 OK
+                    User-Agent: ATOMClient/1/0
+                    Content-Type: application/json
+                    Content-Length: %d
+                                                            
+                    %s
+                    """;
+            String jsonData = recentWeatherData;
+            dataResponse = String.format(dataResponse, jsonData.length(), jsonData);
+            dos.writeUTF(dataResponse);
+            dos.flush();
+        }
+    }
     /**
      * check if {@code Lamport-Value} present in the request then check if the value >= 0
+     *
      * @param req A full request sent by a client
      * @return the lamport clock value that presents in the request
      */
     private int checkAndGetLamportClock(String req) {
         int index = req.indexOf("Lamport-Clock");
 
-        if ( index > 0) {
+        if (index > 0) {
             String cutRequest = req.substring(index);
             return retrieveLamportValue(cutRequest);
         }
         return -1;
     }
 
+
+    public boolean isRequestHeadersValid(String request) {
+        if (request.contains("PUT")) {
+            return request.contains("Content-Length") &&
+                    request.contains("Content-Type") &&
+                    request.contains("Lamport-Clock") &&
+                    request.contains("User-Agent");
+
+        } else if (request.contains("GET")) {
+            return request.contains("Lamport-Clock") &&
+                    request.contains("User-Agent");
+        } else
+            return false;
+    }
+
     /**
      * Get lamport value in the form of key-value pair
+     *
      * @param cutRequest From {@code Lamport-Clock:} to the end to the request
      * @return the lamport clock value
      */
     private int retrieveLamportValue(String cutRequest) {
         int indexOfColon = cutRequest.indexOf(":");
-        if ( indexOfColon > 0) {
+        if (indexOfColon > 0) {
             String fromColon = cutRequest.substring(indexOfColon + 1, cutRequest.indexOf("\n"));
             return Integer.parseInt(fromColon.trim());
         }
@@ -209,11 +272,11 @@ public class AggregationServerMultiThread extends Thread {
     /**
      * Clean up data from data directory
      */
-    private void cleanupStaleData() {
+    public void cleanupStaleData() {
         try {
             //System.out.println("cleaning data...");
             // Define the directory where data files are stored
-            String dataDirectory = "../data/";
+            String dataDirectory = "data/";
 
             // List all files in the data directory
             File[] files = new File(dataDirectory).listFiles();
@@ -260,7 +323,7 @@ public class AggregationServerMultiThread extends Thread {
         // Close idle connections and perform cleanup
         for (Socket socketToClose : socketsToClose) {
             try (DataOutputStream dos = new DataOutputStream(socketToClose.getOutputStream());
-                    ) {
+            ) {
                 dos.writeUTF("Close connection");
                 dos.flush();
                 String serverId = serverIds.get(socketToClose);

@@ -11,15 +11,13 @@ public class GETClient {
         // Extract the server URL from command line arguments
         String clientUrl = args[0];
         String host = clientUrl.split(":")[0];
-//        String host = "127.0.0.1";
         int port = Integer.parseInt(clientUrl.split(":")[1]);
-//        int port = 4567;
         boolean listening = true;
-        // Open a socket connection to the server
+        System.out.println(host +  " " + port);
         try (Socket socket = new Socket(host, port);
              DataInputStream dis = new DataInputStream(socket.getInputStream());
              DataOutputStream outputData = new DataOutputStream(socket.getOutputStream());
-             BufferedReader inputReader = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+        ) {
 
             startHeartbeatThread(outputData);
             // Send a GET request to the server
@@ -35,19 +33,20 @@ public class GETClient {
     static void sendGetRequest(DataOutputStream outputData, DataInputStream dis) throws IOException {
         Thread getRequestThread = new Thread(() -> {
             while (true) {
-                String request = """
+                String response = """
                         GET /weather.json HTTP/1.1
                         User-Agent: ATOMClient/1/0
                         Accept: application/json
                         Lamport-Clock: %d
                         """;
-                request = String.format(request, lamportClock.issueLamportClockValue());
+                response = String.format(response, lamportClock.issueLamportClockValue());
                 try {
-                    outputData.writeUTF(request);
+                    outputData.writeUTF(response);
                     outputData.flush();
                     System.out.println(dis.readUTF());
                     Thread.sleep(3000);
                 } catch (IOException | InterruptedException e) {
+                    System.out.println(e.getMessage());
                     throw new RuntimeException(e);
                 }
 

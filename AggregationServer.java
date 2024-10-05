@@ -19,6 +19,14 @@ public class AggregationServer {
 
         int portNumber = 4567;
         boolean listening = true;
+        if (args.length > 0) {
+            try {
+                portNumber = Integer.parseInt(args[0]);
+            } catch (NumberFormatException ex) {
+                System.err.println("Invalid port number: " + args[0]);
+                System.exit(1);
+            }
+        }
 
         try (ServerSocket serverSocket = new ServerSocket(portNumber)) {
             System.out.println("Aggregation Server started on port " + portNumber);
@@ -33,7 +41,8 @@ public class AggregationServer {
                 }
             }
             while (listening) {
-                new AggregationServerMultiThread(serverSocket.accept(), UUID.randomUUID().toString()).start();
+                new AggregationServerMultiThread(serverSocket.accept(), UUID.randomUUID().toString())
+                        .start();
             }
         } catch (IOException e) {
             System.err.println("Could not listen on port " + portNumber);

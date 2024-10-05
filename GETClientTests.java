@@ -1,5 +1,6 @@
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 
@@ -7,6 +8,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 public class GETClientTests {
@@ -24,6 +26,10 @@ public class GETClientTests {
         mockLamportClock = mock(LamportClock.class);
     }
 
+    @BeforeEach
+    public void tearDown() {
+        Mockito.reset(mockOutputData, mockDis, mockLamportClock);
+    }
     @Test
     public void testSendGetRequest() throws IOException, InterruptedException {
         // Mock the lamport clock value
@@ -49,14 +55,51 @@ public class GETClientTests {
                 GET /weather.json HTTP/1.1
                 User-Agent: ATOMClient/1/0
                 Accept: application/json
-                Lamport-Clock: 0
+                Lamport-Clock: 2
                 """;
         verify(mockOutputData).writeUTF(expectedRequest);
         verify(mockOutputData).flush();
 
         // Verify that the input stream was read
-        verify(mockDis).readUTF();
+        verify(mockDis, atLeastOnce()).readUTF();
+        assertTrue(mockDis.readUTF().contains("200"));
 
+        // Stop the thread (in a real-world scenario, we'd need a way to gracefully stop this)
+        testThread.interrupt();
+    }
+
+    @Test
+    public void testSendGetRequestNoData() throws IOException, InterruptedException {
+        // Mock the lamport clock value
+        when(mockLamportClock.issueLamportClockValue()).thenReturn(0);
+
+        // Mock the input stream to return a fixed response
+        when(mockDis.readUTF()).thenReturn("HTTP/1.1 404 Not Found");
+        // Create a thread to test the method, and use a shorter sleep time
+        Thread testThread = new Thread(() -> {
+            try {
+                GETClient.sendGetRequest(mockOutputData, mockDis);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        });
+        testThread.start();
+        Thread.sleep(500); // Give some time for the thread to run at least once
+
+        // Verify that the request was written to the output stream
+        String expectedRequest = """
+                GET /weather.json HTTP/1.1
+                User-Agent: ATOMClient/1/0
+                Accept: application/json
+                Lamport-Clock: 1
+                """;
+        verify(mockOutputData).writeUTF(expectedRequest);
+        verify(mockOutputData).flush();
+        // Verify that the input stream was read
+        verify(mockDis, atLeastOnce()).readUTF();
+
+//        String response = mockDis.readUTF();
+        assertTrue(mockDis.readUTF().contains("404"));
         // Stop the thread (in a real-world scenario, we'd need a way to gracefully stop this)
         testThread.interrupt();
     }

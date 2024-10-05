@@ -8,8 +8,8 @@ public class LamportClock {
     /**
      * Increase the Lamport clock value by 1.
      */
-    synchronized int localEvent() {
-        return  currentTime++;
+    synchronized int getCurrentValue() {
+        return  currentTime;
     }
 
     // mode 2: receiving event from other process
@@ -28,7 +28,7 @@ public class LamportClock {
      * @return The current Lamport clock value.
      */
     public synchronized int issueLamportClockValue() {
-        return currentTime++;
+        return ++currentTime;
     }
 
 }
